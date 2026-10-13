@@ -49,46 +49,88 @@ async function loadTeams(){
     await getxG();
 }
 
+// Names differ between Super 6 and xG Stat (e.g. "Spurs" vs "Tottenham Hotspur"),
+// so both are reduced to one short key before comparing.
+const TEAM_ALIASES = {
+    "arsenal": "arsenal",
+    "aston villa": "villa", "villa": "villa",
+    "bournemouth": "bournemouth",
+    "brentford": "brentford",
+    "brighton": "brighton", "brighton hove": "brighton", "brighton and hove albion": "brighton",
+    "burnley": "burnley",
+    "chelsea": "chelsea",
+    "coventry": "coventry", "coventry city": "coventry",
+    "crystal palace": "palace", "palace": "palace",
+    "everton": "everton",
+    "fulham": "fulham",
+    "hull": "hull", "hull city": "hull",
+    "ipswich": "ipswich", "ipswich town": "ipswich",
+    "leeds": "leeds", "leeds united": "leeds",
+    "liverpool": "liverpool",
+    "man city": "mancity", "manchester city": "mancity",
+    "man utd": "manutd", "man united": "manutd", "manchester united": "manutd",
+    "newcastle": "newcastle", "newcastle united": "newcastle",
+    "nottm forest": "forest", "nottingham": "forest", "nottingham forest": "forest", "forest": "forest",
+    "sunderland": "sunderland",
+    "spurs": "spurs", "tottenham": "spurs", "tottenham hotspur": "spurs",
+    "west ham": "westham", "west ham united": "westham",
+    "wolves": "wolves", "wolverhampton wanderers": "wolves",
+    "leicester": "leicester", "leicester city": "leicester",
+    "southampton": "southampton"
+};
+const DEFAULT_XG = 1.3; // used only if a fixture can't be matched, so Generate still works
+
+function teamKey(name){
+    const cleaned = String(name)
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^a-z ]/g, " ")
+        .replace(/^afc /, "")
+        .replace(/ fc$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    return TEAM_ALIASES[cleaned] ?? cleaned;
+}
+
 async function getxG(){
 
     try{
-        
-        
-        const teamNames = {
-            "Nottm Forest": "Nottingham",
-            "Leeds": "Leeds United",
-            "Brighton": "Brighton Hove",
-            "Spurs": "Tottenham",
-            "Coventry": "Coventry City",
-            "Hull": "Hull City",
-            "Man Utd": "Man United",
-            "Ipswich": "Ipswich Town"
-        }
 
-        const response = await fetch("https://pitchodds.app/api/v1/fixtures")
-        
+        // xg.json is refreshed on a schedule by xgstat_xg_scraper.py (GitHub Action)
+        const response = await fetch("./xg.json", { cache: "no-store" });
+
         if(!response.ok){
             throw new Error("Could not fetch data")
         }
 
-        const data = await response.json();  
+        const data = await response.json();
         for (let i = 0; i < 6; i++){
-            let x = i + 1;
-            const homeName = teamNames[homeTeamText[i]] ?? homeTeamText[i];
-            const awayName = teamNames[awayTeamText[i]] ?? awayTeamText[i];
-            const match = data.fixtures.find(fixture => 
-                    fixture.home === homeName
+            const x = i + 1;
+            const homeKey = teamKey(homeTeamText[i]);
+            const awayKey = teamKey(awayTeamText[i]);
+            const match = data.fixtures.find(fixture =>
+                    teamKey(fixture.home) === homeKey
                     &&
-                    fixture.away === awayName
+                    teamKey(fixture.away) === awayKey
                 );
-            homeTeamxG[i] = match.expectedGoals.home;
-            awayTeamxG[i] = match.expectedGoals.away;   
             const homexgElement = document.getElementById(`homexg${x}`);
-            const awayxgElement = document.getElementById(`awayxg${x}`); 
+            const awayxgElement = document.getElementById(`awayxg${x}`);
+
+            if(!match){
+                console.warn(`No xG found for ${homeTeamText[i]} v ${awayTeamText[i]}`);
+                homeTeamxG[i] = DEFAULT_XG;
+                awayTeamxG[i] = DEFAULT_XG;
+                homexgElement.textContent = "xG: n/a";
+                awayxgElement.textContent = "xG: n/a";
+                continue;
+            }
+
+            homeTeamxG[i] = match.expectedGoals.home;
+            awayTeamxG[i] = match.expectedGoals.away;
             homexgElement.textContent = "xG: " + homeTeamxG[i].toFixed(2);
             awayxgElement.textContent = "xG: " + awayTeamxG[i].toFixed(2);
-        }  
-        
+        }
+
         console.log(homeTeamxG);
         console.log(awayTeamxG);
     }catch(error){
